@@ -47,6 +47,13 @@ axuvScriptDir = shinethruDir + 'axuv_scripts/'
 # Thomson scattering data, in the mirror_fit input format
 thomsonDataPath = '/home/sanwalka/mirror_fit/1kev_day/data.yaml'
 
+#### Flux loops
+
+# The flux loops are stored in the same mirror_fit data.yaml file as the Thomson scattering data.
+# This is set from thomsonDataPath when config is imported, so set it as well if you change
+# thomsonDataPath at runtime.
+fluxLoopDataPath = thomsonDataPath
+
 #### End loss analyzers (ELA)
 
 # Processed ELA data, stored as f'{shotDatePrefix}_ELA_Density.npz' and

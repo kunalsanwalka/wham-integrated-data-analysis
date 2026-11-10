@@ -752,14 +752,17 @@ def flux_tube_edges(rMid):
 
     return np.concatenate([[0], 0.5*(rMid[1:] + rMid[:-1]), [rMid[-1] + 0.5*(rMid[-1] - rMid[-2])]])
 
-def load_eqdsk_flux(simulationName):
+def load_eqdsk_flux(simulationName, timestepIdx=-1):
     """
-    Load the poloidal flux from the eqdsk of the last IPS timestep of the given simulation.
+    Load the poloidal flux from the eqdsk of one IPS timestep of the given simulation.
 
     Parameters
     ----------
     simulationName : str
         The name of the simulation.
+    timestepIdx : int
+        Index of the IPS timestep (in the order of ips_timestep_dirs()) whose eqdsk is loaded.
+        Default is -1, the last IPS timestep.
 
     Returns
     -------
@@ -768,18 +771,141 @@ def load_eqdsk_flux(simulationName):
     Zmesh : np.array
         2D array of the axial coordinates of the eqdsk grid. [m]
     psi : np.array
-        2D array of the poloidal flux on the eqdsk grid. [Wb]
+        2D array of the poloidal flux on the eqdsk grid. [Wb/rad]
     """
 
     # All simulations are stored in the same directory
     simulationDir = config.simulationScanDir + simulationName + '/'
 
-    # The last IPS timestep
-    lastStepDir = ips_timestep_dirs(simulationDir)[-1]
+    stepDir = ips_timestep_dirs(simulationDir)[timestepIdx]
 
-    filenameEQDSK = lastStepDir + 'components/eq__pleiades_3/eqdsk'
+    filenameEQDSK = stepDir + 'components/eq__pleiades_3/eqdsk'
 
     return read_eqdsk_flux(filenameEQDSK)
+
+def ips_timestep_index(simulationName, simTime):
+    """
+    Index of the IPS timestep whose CQL3D run covers the given simulation time.
+
+    Each IPS timestep updates the equilibrium and then runs CQL3D on it, so this is the timestep
+    whose eqdsk the simulated profiles at simTime were calculated with.
+
+    Parameters
+    ----------
+    simulationName : str
+        The name of the simulation.
+    simTime : float
+        The simulation time. [s]
+
+    Returns
+    -------
+    timestepIdx : int
+        Index of the IPS timestep, in the order of ips_timestep_dirs(). Times past the end of the
+        simulation give the last timestep.
+    """
+
+    # Time at the end of each IPS timestep
+    timeArr, _, _ = load_flux_tube_data(simulationName)
+
+    return min(int(np.searchsorted(timeArr, simTime)), len(timeArr) - 1)
+
+def map_midplane_radius_to_throat(rMid, Rmesh, Zmesh, psi):
+    """
+    Map a set of midplane radii to the mirror throat along the eqdsk flux surfaces.
+
+    The flux surface through a midplane radius is the contour of constant poloidal flux through
+    that point. The throat is taken as the point where that surface is closest to the axis (where
+    |B| peaks, by flux conservation), the same point load_throat_density() picks on the CQL3D grid.
+    Only the z > 0 half of the machine is used, which is the half the CQL3D throat is on.
+
+    Near the axis the flux goes as r^2, so the flux is interpolated linearly in r^2 rather than r.
+    The minimum radius on the eqdsk z grid is refined with a parabola through it and its two
+    neighbours.
+
+    Parameters
+    ----------
+    rMid : np.array
+        1D array of the midplane radii to map. [m]
+    Rmesh : np.array
+        2D array [z x r] of the radial coordinates of the eqdsk grid. [m]
+    Zmesh : np.array
+        2D array [z x r] of the axial coordinates of the eqdsk grid. [m]
+    psi : np.array
+        2D array [z x r] of the poloidal flux on the eqdsk grid. [Wb/rad]
+
+    Returns
+    -------
+    rThroat : np.array
+        1D array of the radius of each flux surface at the mirror throat. [m]
+    zThroat : np.array
+        1D array of the axial position of the mirror throat on each flux surface. [m]
+    """
+
+    rMid = np.atleast_1d(np.asarray(rMid, dtype=float))
+
+    # The eqdsk grid is regular
+    r1D = Rmesh[0]
+    z1D = Zmesh[:, 0]
+
+    def monotonic_prefix(psiSlice):
+        """
+        Number of points of an axial slice of the flux over which it increases with radius.
+
+        Past the mirror coils the flux turns over, so only the rising part can be inverted to get
+        a radius from a flux.
+        """
+
+        turnover = np.nonzero(np.diff(psiSlice) <= 0)[0]
+
+        if len(turnover) == 0:
+            return len(psiSlice)
+
+        return turnover[0] + 1
+
+    # Flux on each of the surfaces being mapped
+    izMid = np.argmin(np.abs(z1D))
+    nMid = monotonic_prefix(psi[izMid])
+    psiTarget = np.interp(rMid**2, r1D[:nMid]**2, psi[izMid, :nMid])
+
+    # Radius of each surface at every axial position from the midplane out to the end of the grid
+    izHalf = np.arange(izMid, len(z1D))
+    rTrace = np.full((len(rMid), len(izHalf)), np.nan)
+    for j, iz in enumerate(izHalf):
+
+        nRise = monotonic_prefix(psi[iz])
+
+        if nRise < 2:
+            continue
+
+        # Surfaces that have left the invertible part of the grid at this z are left as NaN
+        onGrid = psiTarget <= psi[iz, nRise-1]
+        rTrace[onGrid, j] = np.sqrt(np.interp(psiTarget[onGrid], psi[iz, :nRise], r1D[:nRise]**2))
+
+    rThroat = np.full(len(rMid), np.nan)
+    zThroat = np.full(len(rMid), np.nan)
+    zHalf = z1D[izHalf]
+    for k in range(len(rMid)):
+
+        if not np.any(np.isfinite(rTrace[k])):
+            continue
+
+        j = np.nanargmin(rTrace[k])
+
+        # Parabolic refinement of the minimum, when it has a neighbour on each side
+        if 0 < j < len(zHalf) - 1 and np.all(np.isfinite(rTrace[k, j-1:j+2])):
+            r0, r1, r2 = rTrace[k, j-1:j+2]
+            denom = r0 - 2*r1 + r2
+            if denom > 0:
+                dz = zHalf[j+1] - zHalf[j]
+                offset = 0.5 * (r0 - r2) / denom
+                rThroat[k] = r1 - 0.25 * (r0 - r2) * offset
+                zThroat[k] = zHalf[j] + offset * dz
+                continue
+
+        rThroat[k] = rTrace[k, j]
+        zThroat[k] = zHalf[j]
+
+    return rThroat, zThroat
 
 def read_eqdsk_flux(filenameEQDSK):
     """
@@ -797,7 +923,7 @@ def read_eqdsk_flux(filenameEQDSK):
     Zmesh : np.array
         2D array of the axial coordinates of the eqdsk grid. [m]
     psi : np.array
-        2D array of the poloidal flux on the eqdsk grid. [Wb]
+        2D array of the poloidal flux on the eqdsk grid. [Wb/rad]
     """
 
     with open(filenameEQDSK, 'r') as eqdskFile:

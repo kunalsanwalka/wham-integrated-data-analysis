@@ -9,7 +9,7 @@ simulation is chosen here, with no shot number.
 import numpy as np
 import matplotlib.pyplot as plt
 
-from plotting import save_plot, plot_mirrored_profile
+from plotting import save_plot, plot_mirrored_profile, temperatureColor
 from cql3d_simulation import load_temperature_data, parse_simulation_name, density_label
 from thomson import load_thomson_temperature
 
@@ -97,7 +97,7 @@ def plot_electron_temperature_comparison(simulationName, simTime, redoAnalysis=F
         fig = axTe.figure
 
     # [keV] to [eV]
-    plot_mirrored_profile(axTe, rMid, Te[teTimeIdx]*1e3, color='C1',
+    plot_mirrored_profile(axTe, rMid, Te[teTimeIdx]*1e3, color=temperatureColor,
                           label=rf'CQL3D, t$_{{Sim}}$ = {teTimes[teTimeIdx]*1e3:.4g} ms')
 
     #### Thomson scattering

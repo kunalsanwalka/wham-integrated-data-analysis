@@ -15,7 +15,8 @@ The simulated profiles are on the CQL3D grid alone, i.e. without the AXUV extens
 import numpy as np
 import matplotlib.pyplot as plt
 
-from plotting import save_plot, plot_mirrored_profile
+from plotting import (save_plot, plot_mirrored_profile, densityColor, temperatureColor,
+                      halphaColor)
 from cql3d_simulation import (load_density_data, load_temperature_data, parse_simulation_name,
                               density_label, flux_tube_edges)
 from kn1d_simulation import neutral_density_per_flux_tube
@@ -243,7 +244,7 @@ def add_halpha_signal_to_axis(ax, impactParams, signal, signalSigma, synthSignal
 
     ax.plot(impactParams, synthSignal / synthNorm,
             label='Synthetic',
-            color='C3',
+            color=halphaColor,
             linewidth=3,
             marker='o',
             ms=10)
@@ -364,7 +365,7 @@ def plot_axuv_comparison(simulationName, shotnum, simTime, expTime, signalDiodeA
 
     #### Midplane density
 
-    plot_mirrored_profile(axDens, rMid, profiles['dens'], color='C0')
+    plot_mirrored_profile(axDens, rMid, profiles['dens'], color=densityColor)
 
     axDens.set_ylabel(r'n$_i$ [m$^{-3}$]')
 
@@ -393,7 +394,7 @@ def plot_axuv_comparison(simulationName, shotnum, simTime, expTime, signalDiodeA
     #### Midplane electron temperature
 
     # [keV] to [eV]
-    plot_mirrored_profile(axTe, rMid, profiles['Te']*1e3, color='C1')
+    plot_mirrored_profile(axTe, rMid, profiles['Te']*1e3, color=temperatureColor)
 
     axTe.set_ylabel(r'T$_e$ [eV]')
 
@@ -418,7 +419,7 @@ def plot_axuv_comparison(simulationName, shotnum, simTime, expTime, signalDiodeA
     #### H-alpha emissivity per flux tube
 
     plot_mirrored_profile(axHa, emissivity['rTube'], emissivity['total'],
-                          color='C3', label='Total', marker='o')
+                          color=halphaColor, label='Total', marker='o')
 
     # In the core the neutral density is low enough for recombination to be comparable to
     # excitation, so both parts are shown

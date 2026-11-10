@@ -89,7 +89,7 @@ def map_along_flux_surfaces(rMidplane, zGrid, Rmesh, Zmesh, psi, rSimOuter):
     Zmesh : np.array
         2D array [z x r] of the axial coordinates of the eqdsk grid. [m]
     psi : np.array
-        2D array [z x r] of the poloidal flux on the eqdsk grid. [Wb]
+        2D array [z x r] of the poloidal flux on the eqdsk grid. [Wb/rad]
     rSimOuter : np.array
         1D array of the radius of the outermost simulated flux surface at each point of zGrid. [m]
         This is used to continue the mapping where the eqdsk cannot (see the note below).
@@ -232,7 +232,7 @@ def build_density_extension(simulationName, shotnum, diodeArrayNum,
             'zGrid' : 1D array of the axial positions of the extension. [m]
             'shapeExt' : 2D array [expTime x rExt] of the shape of the extension, normalized
                          to 1 at the edge of the simulation grid.
-            'Rmesh', 'Zmesh', 'psi' : the eqdsk grid and poloidal flux on it. [m, m, Wb]
+            'Rmesh', 'Zmesh', 'psi' : the eqdsk grid and poloidal flux on it. [m, m, Wb/rad]
 
     Notes
     -----

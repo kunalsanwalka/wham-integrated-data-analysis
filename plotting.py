@@ -13,6 +13,18 @@ plt.switch_backend('TkAgg')
 
 plt.rcParams.update({'font.size': 28})
 
+# Color of the simulated / synthetic signal of each kind of measurement, so the panels of the same
+# quantity match across diagnostics. The measurements themselves are drawn in black.
+# Density (SEE, n_i vs. Thomson, ELA n). density_comparison.py draws simulation i in f'C{i}', so
+# its first simulation matches this.
+densityColor = 'C0'
+# Temperature (T_e vs. Thomson, ELA T_e and T_i)
+temperatureColor = 'C1'
+# H-alpha (AXUV)
+halphaColor = 'C3'
+# Flux loops
+fluxLoopColor = 'C2'
+
 def save_plot(fig, filename):
     """
     Save the figure in config.plotDir, making the directory if it does not exist yet.

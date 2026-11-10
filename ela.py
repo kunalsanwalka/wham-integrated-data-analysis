@@ -4,43 +4,42 @@ This script loads the end loss analyzer (ELA) profiles.
 The data is read from two files in config.elaDataDir, one with the density and one with the
 temperatures, each holding the profile across the analyzers at several times. The keys of each
 time are prefixed f'surrogate_t_{time}ms_', e.g. 'surrogate_t_4ms_density_m3'.
+
+The density and the radius of each analyzer in these files have already been mapped back to the
+midplane with GDT scaling. midplane_to_throat_density() takes the density on to the mirror throat,
+and cql3d_simulation.map_midplane_radius_to_throat() does the same for the radius. GDT takes the
+plasma to be isothermal along the flux tube, so the temperatures are the same at the midplane and
+the throat.
 """
 
 import numpy as np
 
 import config
 
-# The ELAs sit in the expander where |B| is this many times lower than at the mirror throat
-elaMirrorRatio = 40.0
+# GDT scaling of the density from the midplane to the mirror throat, n_throat / n_mid. The
+# ambipolar potential drop from the midplane to the throat, where the outflow reaches the sound
+# speed, is T_e/2e, so the Boltzmann electrons drop by exp(-1/2).
+gdtThroatDensityFactor = 1 / np.sqrt(np.e)
 
-def map_throat_to_ela(rThroat, densThroat, mirrorRatio=elaMirrorRatio):
+def midplane_to_throat_density(densMid, factor=gdtThroatDensityFactor):
     """
-    Map a density profile at the mirror throat out to the ELAs in the expander.
-
-    The flux through each flux tube is conserved, B * A = const, so going from the throat to the
-    ELAs the cross-sectional area of the tube grows by the mirror ratio B_throat / B_ELA. Its
-    radius grows by the square root of that and, with the particle flux along the tube
-    conserved, the density drops by the same factor as the area grows.
+    Map a density at the midplane to the mirror throat with GDT scaling, n_throat = n_mid / sqrt(e).
 
     Parameters
     ----------
-    rThroat : np.array
-        1D array of the radius of each point at the mirror throat. [m]
-    densThroat : np.array
-        Density at each point of rThroat, with r as the last axis. [m^-3]
-    mirrorRatio : float
-        B_throat / B_ELA.
-        Default is elaMirrorRatio.
+    densMid : np.array
+        Density (or its error) at the midplane. [m^-3]
+    factor : float
+        n_throat / n_mid.
+        Default is gdtThroatDensityFactor = 1/sqrt(e).
 
     Returns
     -------
-    rEla : np.array
-        1D array of the radius of each point at the ELAs. [m]
-    densEla : np.array
-        Density at each point of rEla. [m^-3]
+    densThroat : np.array
+        Density (or its error) at the mirror throat. [m^-3]
     """
 
-    return rThroat * np.sqrt(mirrorRatio), densThroat / mirrorRatio
+    return densMid * factor
 
 def _load_ela_file(filename, quantityKeys, dataDir=None):
     """
@@ -61,7 +60,7 @@ def _load_ela_file(filename, quantityKeys, dataDir=None):
     times : np.array
         1D array of the time points. [s]
     radius : np.array
-        2D array of the radius of each analyzer, [time, analyzer]. [m]
+        2D array of the radius of each analyzer mapped to the midplane, [time, analyzer]. [m]
     analyzerNum : np.array
         2D array of the number of each analyzer, [time, analyzer].
     quantities : dict
@@ -105,11 +104,12 @@ def load_ela_density(shotDatePrefix, dataDir=None):
     times : np.array
         1D array of the time points. [s]
     radius : np.array
-        2D array of the radius of each analyzer, [time, analyzer]. [m]
+        2D array of the radius of each analyzer mapped to the midplane, [time, analyzer]. [m]
     analyzerNum : np.array
         2D array of the number of each analyzer, [time, analyzer].
     dens : np.array
-        2D array of the density, [time, analyzer]. [m^-3]
+        2D array of the density mapped to the midplane, [time, analyzer]. [m^-3]
+        midplane_to_throat_density() maps it on to the mirror throat.
     densSigma : np.array
         2D array of the 1 sigma error on the density, [time, analyzer]. [m^-3]
     windowHalfWidth : float
@@ -140,7 +140,7 @@ def load_ela_temperature(shotDatePrefix, dataDir=None):
     times : np.array
         1D array of the time points. [s]
     radius : np.array
-        2D array of the radius of each analyzer, [time, analyzer]. [m]
+        2D array of the radius of each analyzer mapped to the midplane, [time, analyzer]. [m]
     analyzerNum : np.array
         2D array of the number of each analyzer, [time, analyzer].
     Te : np.array

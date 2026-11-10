@@ -1,14 +1,18 @@
 """
 This script compares one simulation against several diagnostics of one shot in a single figure.
 
-Only the headline comparison of each diagnostic is shown, one panel each, from top to bottom-
+Only the headline comparison of each diagnostic is shown. The left column has the midplane
+diagnostics, one panel each, from top to bottom-
     1. The synthetic SEE signal (line-integrated ion density) against the measured one.
     2. The simulated midplane ion density against the Thomson scattering profile.
     3. The simulated midplane electron temperature against the Thomson scattering profile.
     4. The synthetic H-alpha signal against the one measured by the AXUV array, both normalized
        to their peak.
-The detailed plots of each diagnostic are made by density_comparison.py, axuv_comparison.py and
-electron_temperature_comparison.py.
+The right column has the end loss analyzer (ELA) density, electron temperature and ion temperature
+mapped to the mirror throat, against the simulated ones there, at the ELA time point closest to the
+experimental time. Below them is the measured flux of each flux loop against the synthetic one.
+The detailed plots of each diagnostic are made by density_comparison.py, axuv_comparison.py,
+electron_temperature_comparison.py, ela_comparison.py and fluxloops_comparison.py.
 """
 
 import numpy as np
@@ -17,19 +21,22 @@ import matplotlib.pyplot as plt
 from plotting import save_plot
 from density_comparison import plot_radial_and_synthetic, add_thomson_to_axis
 from electron_temperature_comparison import plot_electron_temperature_comparison
+from ela_comparison import plot_ela_comparison
+from fluxloops_comparison import plot_fluxloop_comparison
 from axuv_comparison import (load_simulated_profiles, halpha_emissivity, synthetic_halpha_signal,
                              add_halpha_signal_to_axis)
 from axuv import load_axuv_signal, pinholePositions
 
 def plot_multi_diagnostic_comparison(simulationName, shotnum, simTime, expTime,
-                                     useExtension=False, detectorsToDrop=None,
+                                     elaShotDatePrefix=None, useExtension=False,
+                                     detectorsToDrop=None,
                                      radiusDiodeArrayNum=1, signalDiodeArrayNum=2, rateKHz=10.0,
                                      tanhSteepness=4.0, redoAnalysis=False,
                                      showPlot=True, saveplot=False):
     """
     Plot the headline comparison of each diagnostic for one simulation against one shot.
 
-    The four panels, from top to bottom, are-
+    The four midplane panels in the left column, from top to bottom, are-
         1. The synthetic SEE signal against the measured one (top panel of
            plot_radial_and_synthetic() in density_comparison.py).
         2. The simulated midplane ion density (bottom panel of plot_radial_and_synthetic()),
@@ -39,6 +46,13 @@ def plot_multi_diagnostic_comparison(simulationName, shotnum, simTime, expTime,
         4. The synthetic H-alpha signal against the measured AXUV signal (bottom panel of
            plot_axuv_comparison() in axuv_comparison.py).
     All four are put on the same x axis.
+
+    The right column has the ELA density, electron temperature and ion temperature at the ELA time
+    point closest to expTime, mapped to the mirror throat, against the simulated ones there
+    (plot_ela_comparison() in ela_comparison.py). These are against the radius at the mirror
+    throat, so they have their own x axis. Below them is the measured flux of each flux loop
+    against the synthetic one, vs. the Z of each loop (plot_fluxloop_comparison() in
+    fluxloops_comparison.py).
 
     Parameters
     ----------
@@ -51,6 +65,10 @@ def plot_multi_diagnostic_comparison(simulationName, shotnum, simTime, expTime,
         The closest available simulated timestep is used.
     expTime : float
         The experimental time. [s]
+        The ELA panels use the ELA time point closest to it.
+    elaShotDatePrefix : int
+        Date prefix of the ELA data files in config.elaDataDir, e.g. 260709.
+        Default is None, which uses the date of shotnum (its first 6 digits).
     useExtension : bool
         Extend the simulated density out to the AXUV plasma radius for the SEE comparison. See
         plot_radial_and_synthetic(). The H-alpha comparison always uses the CQL3D grid alone.
@@ -97,16 +115,34 @@ def plot_multi_diagnostic_comparison(simulationName, shotnum, simTime, expTime,
         The electron temperature axis.
     axHalpha : matplotlib.axes.Axes
         The H-alpha signal axis.
+    elaAxs : tuple of matplotlib.axes.Axes
+        The ELA density, electron temperature and ion temperature axes.
+    axFluxLoop : matplotlib.axes.Axes
+        The flux loop axis.
     """
 
-    fig = plt.figure(figsize=(12, 24), tight_layout=True)
+    if elaShotDatePrefix is None:
+        elaShotDatePrefix = shotnum // 1000
+
+    fig = plt.figure(figsize=(24, 24), tight_layout=True)
+
+    # 4 panels in each column
+    grid = fig.add_gridspec(4, 2)
 
     # The axes are not shared, as plot_radial_and_synthetic() removes the x ticks of the SEE
     # panel, which would remove them from every shared axis. The x limits are matched below.
-    axSee = fig.add_subplot(4, 1, 1)
-    axDens = fig.add_subplot(4, 1, 2)
-    axTe = fig.add_subplot(4, 1, 3)
-    axHalpha = fig.add_subplot(4, 1, 4)
+    axSee = fig.add_subplot(grid[0, 0])
+    axDens = fig.add_subplot(grid[1, 0])
+    axTe = fig.add_subplot(grid[2, 0])
+    axHalpha = fig.add_subplot(grid[3, 0])
+
+    axElaDens = fig.add_subplot(grid[0, 1])
+    axElaTe = fig.add_subplot(grid[1, 1], sharex=axElaDens)
+    axElaTi = fig.add_subplot(grid[2, 1], sharex=axElaDens)
+    elaAxs = (axElaDens, axElaTe, axElaTi)
+
+    # The flux loops are against Z, so they do not share the ELA x axis
+    axFluxLoop = fig.add_subplot(grid[3, 1])
 
     #### SEE and density profile (with Thomson)
 
@@ -155,13 +191,28 @@ def plot_multi_diagnostic_comparison(simulationName, shotnum, simTime, expTime,
         ax.tick_params(labelbottom=False)
         ax.set_xlabel('')
 
+    #### ELA
+
+    plot_ela_comparison(simulationName, elaShotDatePrefix, simTime, expTime=expTime,
+                        showPlot=False, axes=elaAxs)
+
+    for ax in (axElaDens, axElaTe):
+        ax.tick_params(labelbottom=False)
+
+    #### Flux loops
+
+    plot_fluxloop_comparison(simulationName, simTime, showPlot=False, axes=axFluxLoop)
+
+    # The other panels are not titled with the simulation name either
+    axFluxLoop.set_title('Flux loops')
+
     if saveplot:
         save_plot(fig, f'{shotnum}_{simulationName}_multi_diagnostic_comparison.png')
 
     if showPlot:
         plt.show()
 
-    return fig, axSee, axDens, axTe, axHalpha
+    return fig, axSee, axDens, axTe, axHalpha, elaAxs, axFluxLoop
 
 if __name__ == "__main__":
 
@@ -176,6 +227,9 @@ if __name__ == "__main__":
     # SEE detectors with bad data in this shot
     detectorsToDrop = [9, 13, 15]
 
+    # Date prefix of the ELA data in config.elaDataDir
+    elaShotDatePrefix = 260709
+
     plot_multi_diagnostic_comparison(simName, shotnum, simTime, expTime,
-                                     useExtension=True, detectorsToDrop=detectorsToDrop,
-                                     saveplot=True)
+                                     elaShotDatePrefix=elaShotDatePrefix, useExtension=True,
+                                     detectorsToDrop=detectorsToDrop, saveplot=True)
