@@ -37,7 +37,7 @@ from axuv_comparison import (load_simulated_profiles, halpha_emissivity, synthet
                              add_halpha_signal_to_axis)
 from axuv import load_axuv_signal, pinholePositions
 from thomson import load_thomson_density, load_thomson_temperature
-from ela import load_ela_density
+from ela import load_ela_data
 from warpx_simulation import (load_warpx_fields, midplane_profiles, throat_positions,
                               throat_profiles, profile_at_points, thomsonDensityField,
                               ionDensityField)
@@ -225,7 +225,8 @@ def plot_multi_diagnostic_comparison(simulationName, shotnum, simTime, expTime,
                   color=warpxColor, linewidth=3, marker='o', ms=10)
 
     # ELA, at the throat of the IPS eqdsk, with the radius of each ELA there
-    elaTimes, elaRadiusMid = load_ela_density(elaShotDatePrefix)[:2]
+    ela = load_ela_data(elaShotDatePrefix)
+    elaTimes, elaRadiusMid = ela['times'], ela['radius']
     elaTimeIdx = np.argmin(np.abs(elaTimes - expTime))
 
     rThroatEla, zThroatEla = throat_positions(simulationName, simTime, elaRadiusMid[elaTimeIdx])

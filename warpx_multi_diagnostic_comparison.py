@@ -30,7 +30,7 @@ from density_comparison import add_thomson_to_axis
 from electron_temperature_comparison import add_thomson_temperature_to_axis
 from axuv import load_axuv_signal, pinholePositions
 from axuv_comparison import add_halpha_signal_to_axis
-from ela import load_ela_density, load_ela_temperature, midplane_to_throat_density
+from ela import load_ela_data, midplane_to_throat_density
 from thomson import load_thomson_density
 from warpx_simulation import (load_warpx_fields, midplane_profiles, field_interpolator,
                               throat_positions, throat_profiles, profile_at_points,
@@ -258,7 +258,8 @@ def plot_warpx_ela_comparison(elaShotDatePrefix, expTime, ipsSimulationName, ips
 
     As in plot_ela_comparison() in ela_comparison.py, the ELA density is taken from the midplane
     to the throat with GDT scaling (n_throat = n_mid / sqrt(e)), the temperature is left alone,
-    and the radius of each ELA is followed along its flux surface to the throat. WarpX has no
+    and the radius of each ELA (and the ends of its error bar, drawn horizontally) is followed
+    along its flux surface to the throat. WarpX has no
     equilibrium, so the flux surfaces, and the throat, come from the eqdsk of an IPS simulation
     (throat_positions() in warpx_simulation.py). The WarpX n_i + n_fast and T_e are then taken at
     the (r, z) of the throat on each surface.
@@ -301,21 +302,23 @@ def plot_warpx_ela_comparison(elaShotDatePrefix, expTime, ipsSimulationName, ips
 
     #### ELA data at the time point closest to expTime
 
-    times, radiusMid, analyzerNum, densMid, densMidSigma, windowHalfWidth = load_ela_density(elaShotDatePrefix)
-    tempTimes, tempRadius, _, Te, TeSigma, _, _, _ = load_ela_temperature(elaShotDatePrefix)
-
-    if not (np.allclose(times, tempTimes) and np.allclose(radiusMid, tempRadius)):
-        raise ValueError(f'The density and temperature files of {elaShotDatePrefix} are on '
-                         'different times or radii')
+    ela = load_ela_data(elaShotDatePrefix)
+    times, windowHalfWidth = ela['times'], ela['windowHalfWidth']
 
     timeIdx = np.argmin(np.abs(times - expTime))
 
-    dens = midplane_to_throat_density(densMid[timeIdx])
-    densSigma = midplane_to_throat_density(densMidSigma[timeIdx])
-    Te, TeSigma = Te[timeIdx], TeSigma[timeIdx]
+    dens = midplane_to_throat_density(ela['dens'][timeIdx])
+    densSigma = midplane_to_throat_density(ela['densSigma'][timeIdx])
+    Te, TeSigma = ela['Te'][timeIdx], ela['TeSigma'][timeIdx]
 
-    # Throat position of each ELA, along the IPS flux surfaces
-    radius, zThroat = throat_positions(ipsSimulationName, ipsSimTime, radiusMid[timeIdx])
+    # Throat position of each ELA, and of the ends of its error bar, along the IPS flux surfaces
+    radiusMid = ela['radius'][timeIdx]
+    radius, zThroat = throat_positions(ipsSimulationName, ipsSimTime, radiusMid)
+    radiusLow = throat_positions(ipsSimulationName, ipsSimTime,
+                                 radiusMid - ela['radiusErrMinus'][timeIdx])[0]
+    radiusHigh = throat_positions(ipsSimulationName, ipsSimTime,
+                                  radiusMid + ela['radiusErrPlus'][timeIdx])[0]
+    radiusErr = np.array([radius - radiusLow, radiusHigh - radius])
 
     #### WarpX at the throat
 
@@ -339,6 +342,7 @@ def plot_warpx_ela_comparison(elaShotDatePrefix, expTime, ipsSimulationName, ips
             (axTe, Te, TeSigma, throat['T_electrons'], TeSimAtEla, temperatureColor)):
 
         ax.errorbar(radius, value,
+                    xerr=radiusErr,
                     yerr=sigma,
                     label=f'ELA {times[timeIdx]*1e3:g} ms',
                     color='k',
@@ -363,17 +367,12 @@ def plot_warpx_ela_comparison(elaShotDatePrefix, expTime, ipsSimulationName, ips
         ax.set_ylim(0, 1.3 * max(np.max(value + sigma), np.max(simAtEla)))
         ax.grid(alpha=0.3)
 
-    # Label each point with its analyzer number
-    for r, num, top in zip(radius, analyzerNum[timeIdx], dens + densSigma):
-        axDens.annotate(f'ELA {num}', (r, top), xytext=(0, 6), textcoords='offset points',
-                        ha='center', fontsize='x-small')
-
     axDens.set_ylabel(r'n$_{throat}$ [m$^{-3}$]')
     axTe.set_ylabel(r'T$_e$ [eV]')
     axTe.set_xlabel(r'Radius at the mirror throat, r$_{throat}$ [m]')
 
     # WarpX runs well past the outermost ELA, so the axis is kept on the analyzers
-    axDens.set_xlim(0, 1.1 * np.max(radius))
+    axDens.set_xlim(0, 1.1 * np.max(radiusHigh))
 
     axDens.legend(loc='lower center', fontsize='x-small', ncol=2)
     axDens.set_title(f'ELA {elaShotDatePrefix}, '

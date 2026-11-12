@@ -59,8 +59,8 @@ fluxLoopDataPath = thomsonDataPath
 
 #### End loss analyzers (ELA)
 
-# Processed ELA data, stored as f'{shotDatePrefix}_ELA_Density.npz' and
-# f'{shotDatePrefix}_ELA_Temp.npz'
+# Processed ELA data, one CSV file per time point, stored as
+# f'Scan_{shotDatePrefix}_t{time}ms_*.csv' (e.g. 'Scan_260709_t7p5ms_wp25ms_ne_Te_Ti.csv')
 elaDataDir = repoDir + 'ela_data/'
 
 #### Atomic data
