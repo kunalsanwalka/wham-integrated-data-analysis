@@ -217,8 +217,8 @@ def plot_multi_diagnostic_comparison(simulationName, shotnum, simTime, expTime,
 if __name__ == "__main__":
 
     # Simulation and shot to compare
-    simName = 'nneut_1e15_gb_1e18_NBI_800kW_ECH_0kW_ionDrrOn'
-    shotnum = 261012050
+    simName = 'nneut_3e16_gb_1e18_NBI_800kW_ECH_0kW_ionDrrOn'
+    shotnum = 260709060
 
     # Times to plot (in seconds)
     simTime = 3e-3

@@ -179,6 +179,44 @@ def synthetic_halpha_signal(emissivity, impactParams, pinholePos, numPoints=1000
     rTube = emissivity['rTube']
     rEdge = flux_tube_edges(rTube)[-1]
 
+    return line_integrate_emissivity(rTube, emissivity['total'], rEdge, impactParams, pinholePos,
+                                     numPoints=numPoints)
+
+def line_integrate_emissivity(rProfile, emissProfile, rEdge, impactParams, pinholePos,
+                              numPoints=1000):
+    """
+    Line-integrate a midplane emissivity profile along the line of sight of each chord.
+
+    The chords lie in the midplane cross-section, so the emissivity along each one only depends on
+    the distance from the axis. Along each chord it is linearly interpolated in radius on
+    rProfile, held at its first value inside rProfile[0] and at its last value out to rEdge, and
+    zero beyond rEdge. Chords that miss the circle of radius rEdge get zero signal.
+
+    This is the integral behind synthetic_halpha_signal() (CQL3D flux tubes), and it takes any
+    radial grid, e.g. the WarpX one.
+
+    Parameters
+    ----------
+    rProfile : np.array
+        1D array of the radius of each point of the emissivity profile, increasing. [m]
+    emissProfile : np.array
+        1D array of the emissivity on rProfile. [photons m^-3 s^-1]
+    rEdge : float
+        Radius beyond which the emissivity is zero. [m]
+    impactParams : np.array
+        1D array of the impact parameter of each chord. [m]
+    pinholePos : np.array
+        (x, y) of the pinhole, in the frame of axuv.pinholePositions. [m]
+    numPoints : int
+        Number of points along each chord the emissivity is integrated over.
+        Default is 1000.
+
+    Returns
+    -------
+    synthSignal : np.array
+        1D array of the line-integrated emissivity of each chord. [photons m^-2 s^-1]
+    """
+
     directions = chord_directions(impactParams, pinholePos)
     sIn, sOut = chord_circle_intersections(pinholePos, directions, rEdge)
 
@@ -195,7 +233,7 @@ def synthetic_halpha_signal(emissivity, impactParams, pinholePos, numPoints=1000
         points = pinholePos + s[:, None] * directions[i]
 
         # np.interp holds the end values, which gives the flat core and outermost tube
-        epsChord = np.interp(np.linalg.norm(points, axis=1), rTube, emissivity['total'])
+        epsChord = np.interp(np.linalg.norm(points, axis=1), rProfile, emissProfile)
 
         synthSignal[i] = np.trapezoid(epsChord, s)
 

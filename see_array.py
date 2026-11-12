@@ -107,6 +107,111 @@ def synthetic_see_detector(detDictList, interpFunc):
 
     return lineIntegratedDensArr
 
+def full_line_of_sight(detDict, rMax, zMax, numPoints=2000):
+    """
+    The line of sight of a detector, followed in both directions out to a cylinder around the
+    axis.
+
+    'los_rz' in the detector dictionary only covers |x| < 200 mm, which is enough for the CQL3D
+    grid but stops short of the edge of a simulation that reaches the wall (r ~ 0.21-0.25 m at
+    its ends). The line of sight is a straight line in 3D, through the points of 'los_points'
+    (x, y, z) [mm]. This follows that line until it leaves the cylinder r <= rMax, |z| <= zMax.
+
+    Parameters
+    ----------
+    detDict : dict
+        The detector, from load_detector_dictionary().
+    rMax : float
+        Radius of the cylinder. [m]
+    zMax : float
+        Half length of the cylinder. [m]
+    numPoints : int
+        Number of points along the line of sight.
+        Default is 2000.
+
+    Returns
+    -------
+    losRZ : np.array
+        2D array [Point x 2] of the (r, z) of each point along the line of sight. [m]
+    spacing : float
+        Distance between the points. [m]
+        Returns (an empty array, 0) if the line misses the cylinder.
+    """
+
+    losPoints = detDict['los_points'] / 1e3
+
+    # Straight line p(s) = p0 + s u, with s the distance from the first point
+    p0 = losPoints[:, 0]
+    u = losPoints[:, -1] - p0
+    u = u / np.linalg.norm(u)
+
+    # Where x^2 + y^2 = rMax^2
+    a = u[0]**2 + u[1]**2
+    b = 2 * (p0[0]*u[0] + p0[1]*u[1])
+    c = p0[0]**2 + p0[1]**2 - rMax**2
+    disc = b**2 - 4*a*c
+
+    if a == 0 or disc <= 0:
+        return np.empty((0, 2)), 0.0
+
+    sMin = (-b - np.sqrt(disc)) / (2*a)
+    sMax = (-b + np.sqrt(disc)) / (2*a)
+
+    # Where |z| = zMax
+    if u[2] != 0:
+        sZ = np.sort(((-zMax - p0[2]) / u[2], (zMax - p0[2]) / u[2]))
+        sMin, sMax = max(sMin, sZ[0]), min(sMax, sZ[1])
+    elif abs(p0[2]) > zMax:
+        return np.empty((0, 2)), 0.0
+
+    if sMax <= sMin:
+        return np.empty((0, 2)), 0.0
+
+    s = np.linspace(sMin, sMax, numPoints)
+    points = p0[:, None] + u[:, None] * s
+
+    losRZ = np.column_stack((np.hypot(points[0], points[1]), points[2]))
+
+    return losRZ, s[1] - s[0]
+
+def synthetic_see_detector_full_los(detDictList, interpFunc, rMax, zMax, numPoints=2000):
+    """
+    Calculate the line-integrated density of each detector along its whole line of sight inside
+    the cylinder r <= rMax, |z| <= zMax (see full_line_of_sight()), instead of the |x| < 200 mm
+    of 'los_rz' that synthetic_see_detector() integrates over.
+
+    Parameters
+    ----------
+    detDictList : list
+        List of dictionaries defining the detector parameters.
+    interpFunc : function
+        An interpolation function that takes in (r, z) coordinates (in m) and returns the density
+        at that point. [m^-3]
+    rMax : float
+        Radius of the cylinder, e.g. the edge of the simulation grid. [m]
+    zMax : float
+        Half length of the cylinder. [m]
+    numPoints : int
+        Number of points along each line of sight.
+        Default is 2000.
+
+    Returns
+    -------
+    lineIntegratedDensArr : np.array
+        Line-integrated plasma density for each detector [m^-2]
+    """
+
+    lineIntegratedDensArr = np.zeros(len(detDictList))
+
+    for i, detDict in enumerate(detDictList):
+
+        losRZ, spacing = full_line_of_sight(detDict, rMax, zMax, numPoints=numPoints)
+
+        if len(losRZ) > 0:
+            lineIntegratedDensArr[i] = np.trapezoid(interpFunc(losRZ), dx=spacing)
+
+    return lineIntegratedDensArr
+
 def time_dependent_see_detector(simulationName, detDictList):
     """
     Run a full synthetic SEE diagnostic on the simulation.

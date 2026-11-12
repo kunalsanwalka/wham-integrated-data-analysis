@@ -19,6 +19,9 @@ repoDir = os.path.dirname(os.path.abspath(__file__)) + '/'
 # Directory holding one sub-directory per CQL3D + KN1D (IPS) simulation
 simulationScanDir = '/mnt/n/whamdata/sanwalka/ips_runs/findGasBoxDensity/withRadialDiff/'
 
+# Directory holding the WarpX field dumps, (r, theta, z) grids stored as .npz files
+warpxDataDir = repoDir + 'warpx_data/'
+
 #### SEE (shine-through) array
 
 # The SEE detectors are processed in the shinethru repository
