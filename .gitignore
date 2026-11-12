@@ -1,3 +1,4 @@
 plots/
 __pycache__/
 warpx_data/
+ela_data/
