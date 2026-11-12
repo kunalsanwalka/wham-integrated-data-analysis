@@ -24,7 +24,7 @@ from cql3d_simulation import (load_throat_density, load_throat_temperature, load
 from ela import load_ela_density, load_ela_temperature, midplane_to_throat_density
 
 def plot_ela_comparison(simulationName, shotDatePrefix, simTime, expTime=None,
-                        showPlot=True, saveplot=False, axes=None):
+                        showPlot=True, saveplot=False, axes=None, simColor=None):
     """
     Plot the ELA density, electron temperature and ion temperature against the radius of each
     analyzer at the mirror throat, one curve per time point, with the simulated density, electron
@@ -62,6 +62,10 @@ def plot_ela_comparison(simulationName, shotDatePrefix, simTime, expTime=None,
         The three axes (density, T_e, T_i) to draw into instead of making a new figure, e.g. to
         place this plot in a larger figure.
         Default is None, which makes a new figure.
+    simColor : str
+        Color of every simulated profile.
+        Default is None, which draws the density in densityColor and the temperatures in
+        temperatureColor.
 
     Returns
     -------
@@ -153,32 +157,35 @@ def plot_ela_comparison(simulationName, shotDatePrefix, simTime, expTime=None,
                         elinewidth=2,
                         capsize=4)
 
+    simDensColor = densityColor if simColor is None else simColor
+    simTempColor = temperatureColor if simColor is None else simColor
+
     axDens.plot(rThroat, densSim,
-                color=densityColor,
+                color=simDensColor,
                 linewidth=3,
                 label=rf'CQL3D, t$_{{Sim}}$ = {simTimes[simTimeIdx]*1e3:.4g} ms')
     axDens.plot(radius[0], densSimAtEla,
-                color=densityColor,
+                color=simDensColor,
                 linestyle='none',
                 marker='s',
                 ms=12)
 
     axTe.plot(rThroatTemp, TeSim,
-              color=temperatureColor,
+              color=simTempColor,
               linewidth=3,
               label=rf'CQL3D, t$_{{Sim}}$ = {tempSimTimes[tempSimTimeIdx]*1e3:.4g} ms')
     axTe.plot(radius[0], TeSimAtEla,
-              color=temperatureColor,
+              color=simTempColor,
               linestyle='none',
               marker='s',
               ms=12)
 
     axTi.plot(rThroatTemp, TiSim,
-              color=temperatureColor,
+              color=simTempColor,
               linewidth=3,
               label=rf'CQL3D, t$_{{Sim}}$ = {tempSimTimes[tempSimTimeIdx]*1e3:.4g} ms')
     axTi.plot(radius[0], TiSimAtEla,
-              color=temperatureColor,
+              color=simTempColor,
               linestyle='none',
               marker='s',
               ms=12)

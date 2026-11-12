@@ -45,7 +45,8 @@ def add_thomson_temperature_to_axis(ax):
     return
 
 def plot_electron_temperature_comparison(simulationName, simTime, redoAnalysis=False,
-                                         showPlot=True, saveplot=False, axes=None):
+                                         showPlot=True, saveplot=False, axes=None,
+                                         color=temperatureColor):
     """
     Plot the simulated midplane electron temperature against the Thomson scattering profile.
 
@@ -74,6 +75,9 @@ def plot_electron_temperature_comparison(simulationName, simTime, redoAnalysis=F
         Axis to draw into instead of making a new figure, e.g. to place this plot in a larger
         figure.
         Default is None, which makes a new figure.
+    color : str
+        Color of the simulated profile.
+        Default is temperatureColor.
 
     Returns
     -------
@@ -97,7 +101,7 @@ def plot_electron_temperature_comparison(simulationName, simTime, redoAnalysis=F
         fig = axTe.figure
 
     # [keV] to [eV]
-    plot_mirrored_profile(axTe, rMid, Te[teTimeIdx]*1e3, color=temperatureColor,
+    plot_mirrored_profile(axTe, rMid, Te[teTimeIdx]*1e3, color=color,
                           label=rf'CQL3D, t$_{{Sim}}$ = {teTimes[teTimeIdx]*1e3:.4g} ms')
 
     #### Thomson scattering

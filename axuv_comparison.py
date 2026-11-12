@@ -20,8 +20,9 @@ from plotting import (save_plot, plot_mirrored_profile, densityColor, temperatur
 from cql3d_simulation import (load_density_data, load_temperature_data, parse_simulation_name,
                               density_label, flux_tube_edges)
 from kn1d_simulation import neutral_density_per_flux_tube
-from axuv import (load_axuv_signal, load_axuv_impact_params, pinholePositions,
-                  chord_directions, chord_circle_intersections)
+from axuv import (load_axuv_signal, load_axuv_raw_signal, load_axuv_impact_params,
+                  pinholePositions, chord_directions, chord_circle_intersections, average_down,
+                  axuv_keep_mask)
 from atomic_data import load_pec_table, evaluate_pec
 
 def load_simulated_profiles(simulationName, simTime, redoAnalysis=False):
@@ -240,7 +241,7 @@ def line_integrate_emissivity(rProfile, emissProfile, rEdge, impactParams, pinho
     return synthSignal
 
 def add_halpha_signal_to_axis(ax, impactParams, signal, signalSigma, synthSignal,
-                              signalDiodeArrayNum, description, expTime):
+                              signalDiodeArrayNum, description, expTime, synthColor=halphaColor):
     """
     Plot the measured line-integrated AXUV signal of each chord against the synthetic H-alpha
     signal.
@@ -259,6 +260,9 @@ def add_halpha_signal_to_axis(ax, impactParams, signal, signalSigma, synthSignal
         The diode array the signal is from.
     expTime : float
         The experimental time of the signal. [s]
+    synthColor : str
+        Color of the synthetic signal.
+        Default is halphaColor.
     """
 
     # The description holds the filter on a second line, e.g. '$H_{\alpha}$\n[654-659 nm]'
@@ -282,7 +286,7 @@ def add_halpha_signal_to_axis(ax, impactParams, signal, signalSigma, synthSignal
 
     ax.plot(impactParams, synthSignal / synthNorm,
             label='Synthetic',
-            color=halphaColor,
+            color=synthColor,
             linewidth=3,
             marker='o',
             ms=10)
@@ -299,7 +303,7 @@ def add_halpha_signal_to_axis(ax, impactParams, signal, signalSigma, synthSignal
     return
 
 def plot_axuv_comparison(simulationName, shotnum, simTime, expTime, signalDiodeArrayNum=2,
-                         rateKHz=10.0, redoAnalysis=False,
+                         rateKHz=10.0, detectorsToDrop=None, redoAnalysis=False,
                          showPlot=True, saveplot=False, axes=None):
     """
     Plot the simulated midplane profiles against the measured AXUV signal.
@@ -335,6 +339,10 @@ def plot_axuv_comparison(simulationName, shotnum, simTime, expTime, signalDiodeA
     rateKHz : float
         Sets the width of the window the AXUV signal is averaged over, 1/rateKHz. [kHz]
         Default is 10.
+    detectorsToDrop : list of int
+        Indices of the AXUV chords with bad data, which are left out. These are in the order the
+        chords are stored in the AXUV file, the index on each panel of plot_axuv_raw_signals().
+        Default is None, which keeps every chord.
     redoAnalysis :
         See load_simulated_profiles().
     showPlot : bool
@@ -374,7 +382,8 @@ def plot_axuv_comparison(simulationName, shotnum, simTime, expTime, signalDiodeA
 
     # Measured AXUV signal
     impactParams, signal, signalSigma, description = load_axuv_signal(shotnum, signalDiodeArrayNum,
-                                                                      expTime, rateKHz=rateKHz)
+                                                                      expTime, rateKHz=rateKHz,
+                                                                      detectorsToDrop=detectorsToDrop)
 
     # Synthetic signal along the same chords
     synthSignal = synthetic_halpha_signal(emissivity, impactParams,
@@ -494,6 +503,138 @@ def plot_axuv_comparison(simulationName, shotnum, simTime, expTime, signalDiodeA
 
     return fig, axDens, axTe, axNH, axHa, axSig
 
+def plot_axuv_raw_signals(shotnum, diodeArrayNum=2, expTime=None, rateKHz=10.0,
+                          detectorsToDrop=None, tMin=None, tMax=None,
+                          showPlot=True, saveplot=False):
+    """
+    Plot the raw signal of every chord of an AXUV diode array against time, one panel per chord,
+    to check each chord for saturation or other faults before choosing detectorsToDrop.
+
+    Each panel shows the signal at the native (~1 MHz) rate in grey and averaged down to rateKHz
+    in black. The panels are in order of impact parameter and share both axes, so the chords
+    can be compared with each other directly. The y axis is set by the 99.9th percentile of the
+    native samples over all chords, so isolated spikes above it are cut off rather than squashing
+    every panel.
+
+    Each panel is titled with its chord index, in file order, which is the index detectorsToDrop
+    takes (see load_axuv_signal() in axuv.py), and its impact parameter.
+
+    Parameters
+    ----------
+    shotnum : int
+        The shot number.
+    diodeArrayNum : int
+        The diode array.
+        Default is 2, the H-alpha filtered array (DIODEARRAY2).
+    expTime : float
+        The experimental time of the comparison. [s]
+        If given, the averaging window of load_axuv_signal(), of width 1/rateKHz centred on it,
+        is shaded on every panel.
+        Default is None.
+    rateKHz : float
+        Rate the native data is averaged down to, and the inverse width of the averaging window
+        at expTime. [kHz]
+        Default is 10.
+    detectorsToDrop : list of int
+        Chord indices that are dropped from the comparison. Their panels are marked as dropped.
+        Default is None.
+    tMin : float
+        Start of the time axis. [s]
+        Default is None, which starts at the beginning of the data.
+    tMax : float
+        End of the time axis. [s]
+        Default is None, which ends at the end of the data.
+    showPlot : bool
+        Show the figure before returning.
+        Default is True.
+    saveplot : bool
+        Save the plot in config.plotDir as f'{shotnum}_axuv_DA{diodeArrayNum}_raw_signals.png'.
+        Default is False.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The figure.
+    axs : np.array of matplotlib.axes.Axes
+        The axis of each panel, in order of impact parameter.
+    """
+
+    timeArr, impactParams, signalRaw, description = load_axuv_raw_signal(shotnum, diodeArrayNum)
+
+    keep = axuv_keep_mask(len(impactParams), detectorsToDrop)
+
+    inRange = np.ones(len(timeArr), dtype=bool)
+    if tMin is not None:
+        inRange &= timeArr >= tMin
+    if tMax is not None:
+        inRange &= timeArr <= tMax
+    timeArr, signalRaw = timeArr[inRange], signalRaw[:, inRange]
+
+    numChords = len(impactParams)
+    numCols = 5
+    numRows = int(np.ceil(numChords / numCols))
+
+    fig, axs = plt.subplots(numRows, numCols, figsize=(6*numCols, 4.5*numRows),
+                            sharex=True, sharey=True, tight_layout=True, squeeze=False)
+    axs = axs.ravel()
+
+    yMax = 1.1 * np.max(np.percentile(signalRaw, 99.9, axis=1))
+
+    # [ms] for the axis
+    timeMs = timeArr * 1e3
+
+    for panelIdx, chordIdx in enumerate(np.argsort(impactParams)):
+
+        ax = axs[panelIdx]
+
+        ax.plot(timeMs, signalRaw[chordIdx],
+                color='0.7',
+                linewidth=0.5,
+                label='1 MHz' if panelIdx == 0 else None)
+
+        avgTimes, avgSignal = average_down(timeArr, signalRaw[chordIdx], rateKHz)
+        ax.plot(avgTimes * 1e3, avgSignal,
+                color='k',
+                linewidth=2,
+                label=f'{rateKHz:g} kHz' if panelIdx == 0 else None)
+
+        if expTime is not None:
+            halfWidth = 0.5 / (rateKHz * 1e3)
+            ax.axvspan((expTime - halfWidth) * 1e3, (expTime + halfWidth) * 1e3,
+                       color=halphaColor, alpha=0.3,
+                       label=f'{expTime*1e3:.4g} ms window' if panelIdx == 0 else None)
+
+        title = f'#{chordIdx}, b = {impactParams[chordIdx]*1e2:+.1f} cm'
+        if not keep[chordIdx]:
+            title += ' (dropped)'
+            ax.set_facecolor('0.92')
+        ax.set_title(title, fontsize='small')
+
+        ax.grid(alpha=0.3)
+
+    for ax in axs[numChords:]:
+        ax.set_visible(False)
+
+    axs[0].set_ylim(0, yMax)
+
+    for ax in axs[(numRows - 1) * numCols:numChords]:
+        ax.set_xlabel('Time [ms]')
+    for ax in axs[::numCols]:
+        ax.set_ylabel('Signal [nA]')
+
+    axs[0].legend(loc='upper right', fontsize='x-small')
+
+    fig.suptitle(f'Shot #{shotnum}, DA{diodeArrayNum} {" ".join(description.split())}, '
+                 'raw signal (signal_raw_nA) by chord, in order of impact parameter')
+
+    if saveplot:
+        save_plot(fig, f'{shotnum}_axuv_DA{diodeArrayNum}_raw_signals.png')
+
+    if showPlot:
+        plt.show()
+
+    return fig, axs[:numChords]
+
 def plot_axuv_chords(shotnum, diodeArrayNum=2, plasmaRadius=0.15,
                      showPlot=True, saveplot=False, ax=None):
     """
@@ -603,5 +744,13 @@ if __name__ == "__main__":
     simTime = 3e-3
     expTime = 7.83e-3
 
+    # AXUV chords with bad data in this shot (chord indices, see plot_axuv_raw_signals())
+    axuvDetectorsToDrop = None
+
+    # Raw signal of every chord against time, to check for bad chords
+    plot_axuv_raw_signals(shotnum, diodeArrayNum=2, expTime=expTime, rateKHz=10.0,
+                          detectorsToDrop=axuvDetectorsToDrop, saveplot=True, showPlot=False)
+
     plot_axuv_comparison(simName, shotnum, simTime, expTime,
-                         signalDiodeArrayNum=2, rateKHz=10.0, saveplot=True)
+                         signalDiodeArrayNum=2, rateKHz=10.0,
+                         detectorsToDrop=axuvDetectorsToDrop, saveplot=True)

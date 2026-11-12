@@ -25,6 +25,12 @@ halphaColor = 'C3'
 # Flux loops
 fluxLoopColor = 'C2'
 
+# Colors of each source when a figure compares the experiment against more than one kind of
+# simulation (multi_diagnostic_comparison.py). These replace the per-quantity colors above, so
+# each source keeps one color in every panel. The measurements stay black.
+ipsColor = 'C0'
+warpxColor = 'C3'
+
 def save_plot(fig, filename):
     """
     Save the figure in config.plotDir, making the directory if it does not exist yet.

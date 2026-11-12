@@ -167,7 +167,89 @@ def generate_axuv_data(shotnum, diodeArrayNum):
 
     return
 
-def load_axuv_signal(shotnum, diodeArrayNum, expTime, rateKHz=10.0):
+def load_axuv_raw_signal(shotnum, diodeArrayNum):
+    """
+    Load the raw signal of every chord of an AXUV diode array against time.
+
+    The chords are in the order they are stored in the AXUV NPZ file. This is the order the chord
+    indices of detectorsToDrop (see load_axuv_signal()) refer to.
+
+    Parameters
+    ----------
+    shotnum : int
+        The shot number.
+    diodeArrayNum : int
+        The diode array, i.e. 2 for DIODEARRAY2 (the H-alpha filtered array).
+
+    Returns
+    -------
+    timeArr : np.array
+        1D array of the time of each sample, at the native (~1 MHz) rate. [s]
+    impactParams : np.array
+        1D array of the impact parameter of each chord, in file order. [m]
+    signalRaw : np.array
+        2D array [Chord x Time] of the raw signal (signal_raw_nA). [nA]
+    description : str
+        Description of the diode array, e.g. its filter.
+    """
+
+    # Process the shot if it has not been processed yet
+    generate_axuv_data(shotnum, diodeArrayNum)
+
+    filenameList = axuv_data_files(shotnum, diodeArrayNum)
+
+    with np.load(filenameList[0], allow_pickle=True) as data:
+        timeArr = data[f's{shotnum}_time_s']
+        impactParams = data[f's{shotnum}_impact_b_raw_m']
+        signalRaw = data[f's{shotnum}_signal_raw_nA']
+        description = str(data[f's{shotnum}_diode_description'])
+
+    return timeArr, impactParams, signalRaw, description
+
+def axuv_keep_mask(numChords, detectorsToDrop, impactParams=None, diodeArrayNum=None):
+    """
+    Mask of the chords that are kept once detectorsToDrop are left out.
+
+    Parameters
+    ----------
+    numChords : int
+        Number of chords of the diode array.
+    detectorsToDrop : list of int
+        Chord indices (in file order, see load_axuv_raw_signal()) to leave out. None drops none.
+    impactParams : np.array
+        Impact parameter of each chord, in file order. [m]
+        Only used to say which chords were dropped.
+        Default is None.
+    diodeArrayNum : int
+        The diode array, only used to say which chords were dropped.
+        Default is None.
+
+    Returns
+    -------
+    keep : np.array
+        1D boolean array, False for the dropped chords, in file order.
+    """
+
+    keep = np.ones(numChords, dtype=bool)
+
+    if not detectorsToDrop:
+        return keep
+
+    for idx in detectorsToDrop:
+
+        if not 0 <= idx < numChords:
+            raise ValueError(f'AXUV chord index {idx} is out of range, the diode array has '
+                             f'{numChords} chords (0 to {numChords - 1})')
+
+        keep[idx] = False
+
+        if impactParams is not None:
+            print(f'Discarding AXUV DA{diodeArrayNum} chord index {idx} '
+                  f'({impactParams[idx]*1e2:.2f} cm)')
+
+    return keep
+
+def load_axuv_signal(shotnum, diodeArrayNum, expTime, rateKHz=10.0, detectorsToDrop=None):
     """
     Load the line-integrated signal of every chord of an AXUV diode array at one time.
 
@@ -186,32 +268,28 @@ def load_axuv_signal(shotnum, diodeArrayNum, expTime, rateKHz=10.0):
     rateKHz : float
         Sets the width of the averaging window, 1/rateKHz. [kHz]
         Default is 10.
+    detectorsToDrop : list of int
+        Indices of the chords with bad data, which are left out. These are 0-indexed in the order
+        the chords are stored in the AXUV file (see load_axuv_raw_signal()), which is the index
+        shown on each panel of plot_axuv_raw_signals() in axuv_comparison.py. It is not the
+        position in the impact-parameter-sorted output.
+        Default is None, which keeps every chord.
 
     Returns
     -------
     impactParams : np.array
-        1D array of the impact parameter of each chord, sorted in ascending order. [m]
+        1D array of the impact parameter of each kept chord, sorted in ascending order. [m]
     signal : np.array
-        1D array of the line-integrated signal of each chord, averaged over the window. [nA]
+        1D array of the line-integrated signal of each kept chord, averaged over the window. [nA]
     signalSigma : np.array
-        1D array of the standard deviation of each chord's signal within the window. [nA]
+        1D array of the standard deviation of each kept chord's signal within the window. [nA]
         This is the spread of the samples, i.e. the noise and fluctuation level, rather than
         the error on the mean.
     description : str
         Description of the diode array, e.g. its filter.
     """
 
-    # Process the shot if it has not been processed yet
-    generate_axuv_data(shotnum, diodeArrayNum)
-
-    filenameList = axuv_data_files(shotnum, diodeArrayNum)
-
-    with np.load(filenameList[0], allow_pickle=True) as data:
-        timeArr = data[f's{shotnum}_time_s']
-        impactParams = data[f's{shotnum}_impact_b_raw_m']
-        # [Chord x Time]
-        signalRaw = data[f's{shotnum}_signal_raw_nA']
-        description = str(data[f's{shotnum}_diode_description'])
+    timeArr, impactParams, signalRaw, description = load_axuv_raw_signal(shotnum, diodeArrayNum)
 
     # Averaging window centred on expTime
     windowWidth = 1 / (rateKHz * 1e3)
@@ -223,6 +301,10 @@ def load_axuv_signal(shotnum, diodeArrayNum, expTime, rateKHz=10.0):
 
     signal = np.mean(signalRaw[:, inWindow], axis=1)
     signalSigma = np.std(signalRaw[:, inWindow], axis=1)
+
+    # Leave out the bad chords
+    keep = axuv_keep_mask(len(impactParams), detectorsToDrop, impactParams, diodeArrayNum)
+    impactParams, signal, signalSigma = impactParams[keep], signal[keep], signalSigma[keep]
 
     # Sort based on the impact parameter
     sortIdx = np.argsort(impactParams)

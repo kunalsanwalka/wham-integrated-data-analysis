@@ -1,6 +1,6 @@
 """
 This script compares one WarpX simulation against several diagnostics of one shot in a single
-figure. It is the WarpX version of multi_diagnostic_comparison.py.
+figure. It is the WarpX version of ips_multi_diagnostic_comparison.py.
 
 The WarpX fields are averaged over their dumps and theta (see warpx_simulation.py), so there is no
 simulation time to choose. The left column has the midplane diagnostics, one panel each, from top
@@ -17,7 +17,7 @@ as WarpX has no equilibrium. Below them are the SEE and AXUV lines of sight on t
 grid (see warpx_lines_of_sight.py).
 
 WarpX gives no ion temperature or equilibrium flux, so the ELA T_i and flux loop panels of
-multi_diagnostic_comparison.py are left out.
+ips_multi_diagnostic_comparison.py are left out.
 """
 
 import numpy as np
@@ -54,6 +54,76 @@ def plot_mirrored_line(ax, r, profile, **kwargs):
     ax.plot(-r, profile, **kwargs)
 
     return
+
+def warpx_see_signal(shotnum, runFile='fields_rtz.npz', detectorsToDrop=None, fullLos=True):
+    """
+    The synthetic SEE signal of a WarpX simulation, and the measured one, on the detectors with
+    data.
+
+    The synthetic signal line-integrates n_i + n_fast (ionDensityField) along each detector's line
+    of sight. The detectors are dropped and sorted the same way as in plot_radial_and_synthetic()
+    in density_comparison.py, so the two simulations share the same points.
+
+    Parameters
+    ----------
+    shotnum : int
+        The shot number the experimental data is taken from.
+    runFile : str
+        The WarpX field dump, see load_warpx_fields().
+        Default is 'fields_rtz.npz'.
+    detectorsToDrop : list of int
+        Indices (in detDictList) of the detectors with bad data, which are left out.
+        Default is None, which drops defaultDetectorsToDrop.
+    fullLos : bool
+        Integrate along the whole line of sight out to the edge of the WarpX grid
+        (synthetic_see_detector_full_los()) rather than over 'los_rz' alone.
+        Default is True.
+
+    Returns
+    -------
+    impactParams : np.array
+        1D array of the impact parameter of each detector with data, sorted. [m]
+    simSignal : np.array
+        1D array of the synthetic signal of each detector. [m^-2]
+    expTimeArr : np.array
+        1D array of the experimental times. [s]
+    expDataArr : np.array
+        2D array [Detector x Time] of the measured signal. [m^-2]
+    expDataSigmaArr : np.array
+        2D array [Detector x Time] of the error on the measured signal. [m^-2]
+    """
+
+    if detectorsToDrop is None:
+        detectorsToDrop = defaultDetectorsToDrop
+
+    fields = load_warpx_fields(runFile)
+
+    #### Synthetic SEE signal, on every detector
+
+    detDictList = load_detector_dictionary()
+    interpFunc = field_interpolator(fields, ionDensityField)
+
+    if fullLos:
+        simSignal = synthetic_see_detector_full_los(detDictList, interpFunc,
+                                                    fields['r'][-1], fields['z'][-1])
+    else:
+        simSignal = synthetic_see_detector(detDictList, interpFunc)
+
+    #### Measured SEE signal
+
+    expDictList = load_experimental_data(shotnum, detectorsToDrop=detectorsToDrop)
+    expTimeArr, expDataArr, expDataSigmaArr, dataPresent = exp_dict_to_numpy(expDictList)
+
+    impactParams = np.array([d['impact_param_vertical'] for d in expDictList]) / 1e3
+
+    # Remove the detectors without data (see load_experimental_data())
+    impactParams = impactParams[dataPresent]
+    simSignal = simSignal[dataPresent]
+
+    sortIdx = np.argsort(impactParams)
+
+    return (impactParams[sortIdx], simSignal[sortIdx], expTimeArr, expDataArr[sortIdx],
+            expDataSigmaArr[sortIdx])
 
 def plot_warpx_see_comparison(shotnum, expTime, runFile='fields_rtz.npz', detectorsToDrop=None,
                               fullLos=True, showPlot=True, saveplot=False, axes=None):
@@ -106,39 +176,11 @@ def plot_warpx_see_comparison(shotnum, expTime, runFile='fields_rtz.npz', detect
         The impact parameter of each detector plotted, sorted. [m]
     """
 
-    if detectorsToDrop is None:
-        detectorsToDrop = defaultDetectorsToDrop
-
     fields = load_warpx_fields(runFile)
     profiles = midplane_profiles(fields)
 
-    #### Synthetic SEE signal, on every detector
-
-    detDictList = load_detector_dictionary()
-    interpFunc = field_interpolator(fields, ionDensityField)
-
-    if fullLos:
-        simSignal = synthetic_see_detector_full_los(detDictList, interpFunc,
-                                                    fields['r'][-1], fields['z'][-1])
-    else:
-        simSignal = synthetic_see_detector(detDictList, interpFunc)
-
-    #### Measured SEE signal
-
-    expDictList = load_experimental_data(shotnum, detectorsToDrop=detectorsToDrop)
-    expTimeArr, expDataArr, expDataSigmaArr, dataPresent = exp_dict_to_numpy(expDictList)
-
-    impactParams = np.array([d['impact_param_vertical'] for d in expDictList]) / 1e3
-
-    # Remove the detectors without data (see load_experimental_data())
-    impactParams = impactParams[dataPresent]
-    simSignal = simSignal[dataPresent]
-
-    sortIdx = np.argsort(impactParams)
-    impactParams = impactParams[sortIdx]
-    simSignal = simSignal[sortIdx]
-    expDataArr = expDataArr[sortIdx]
-    expDataSigmaArr = expDataSigmaArr[sortIdx]
+    impactParams, simSignal, expTimeArr, expDataArr, expDataSigmaArr = warpx_see_signal(
+        shotnum, runFile=runFile, detectorsToDrop=detectorsToDrop, fullLos=fullLos)
 
     expTimeIdx = np.argmin(np.abs(expTimeArr - expTime))
 
@@ -350,8 +392,8 @@ def plot_warpx_ela_comparison(elaShotDatePrefix, expTime, ipsSimulationName, ips
 
 def plot_warpx_multi_diagnostic_comparison(shotnum, expTime, ipsSimulationName, ipsSimTime,
                                            runFile='fields_rtz.npz', elaShotDatePrefix=None,
-                                           detectorsToDrop=None, fullLos=True,
-                                           signalDiodeArrayNum=2, rateKHz=10.0,
+                                           detectorsToDrop=None, axuvDetectorsToDrop=None,
+                                           fullLos=True, signalDiodeArrayNum=2, rateKHz=10.0,
                                            showPlot=True, saveplot=False):
     """
     Plot the headline comparison of each diagnostic for one WarpX simulation against one shot.
@@ -387,6 +429,10 @@ def plot_warpx_multi_diagnostic_comparison(shotnum, expTime, ipsSimulationName, 
     detectorsToDrop : list of int
         Indices of the SEE detectors with bad data, which are left out.
         Default is None, which drops defaultDetectorsToDrop.
+    axuvDetectorsToDrop : list of int
+        Indices of the AXUV chords with bad data, which are left out. These are in the order the
+        chords are stored in the AXUV file, the index on each panel of plot_axuv_raw_signals().
+        Default is None, which keeps every chord.
     fullLos : bool
         See plot_warpx_see_comparison().
         Default is True.
@@ -465,7 +511,8 @@ def plot_warpx_multi_diagnostic_comparison(shotnum, expTime, ipsSimulationName, 
     emissivity = warpx_halpha_emissivity(profiles)
 
     impactParams, signal, signalSigma, description = load_axuv_signal(shotnum, signalDiodeArrayNum,
-                                                                      expTime, rateKHz=rateKHz)
+                                                                      expTime, rateKHz=rateKHz,
+                                                                      detectorsToDrop=axuvDetectorsToDrop)
 
     synthSignal = synthetic_warpx_halpha_signal(emissivity, impactParams,
                                                 pinholePositions[signalDiodeArrayNum])
@@ -521,6 +568,10 @@ if __name__ == "__main__":
     # SEE detectors with bad data in this shot
     detectorsToDrop = [9, 13, 15]
 
+    # AXUV chords with bad data in this shot (chord indices, see plot_axuv_raw_signals() in
+    # axuv_comparison.py)
+    axuvDetectorsToDrop = [8, 9, 10]
+
     # IPS simulation whose eqdsk gives the mirror throat for the ELA comparison
     ipsSimulationName = 'nneut_3e16_gb_1e18_NBI_800kW_ECH_0kW_ionDrrOn'
     ipsSimTime = 3e-3
@@ -530,4 +581,5 @@ if __name__ == "__main__":
 
     plot_warpx_multi_diagnostic_comparison(shotnum, expTime, ipsSimulationName, ipsSimTime,
                                            runFile=runFile, elaShotDatePrefix=elaShotDatePrefix,
-                                           detectorsToDrop=detectorsToDrop, saveplot=True)
+                                           detectorsToDrop=detectorsToDrop,
+                                           axuvDetectorsToDrop=axuvDetectorsToDrop, saveplot=True)

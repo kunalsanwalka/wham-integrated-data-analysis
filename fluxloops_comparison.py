@@ -15,7 +15,7 @@ from fluxloops import load_flux_loops, synthetic_flux_loop_signal
 import config
 
 def plot_fluxloop_comparison(simulationName, simTime, timestepIdx=None, refTimestepIdx=0,
-                             showPlot=True, saveplot=False, axes=None):
+                             showPlot=True, saveplot=False, axes=None, color=fluxLoopColor):
     """
     Plot the measured flux of each flux loop against the synthetic one of the simulation, vs. the
     axial position of the loop.
@@ -47,6 +47,9 @@ def plot_fluxloop_comparison(simulationName, simTime, timestepIdx=None, refTimes
         The axis to draw into instead of making a new figure, e.g. to place this plot in a larger
         figure.
         Default is None, which makes a new figure.
+    color : str
+        Color of the synthetic flux.
+        Default is fluxLoopColor.
 
     Returns
     -------
@@ -94,7 +97,7 @@ def plot_fluxloop_comparison(simulationName, simTime, timestepIdx=None, refTimes
                 capsize=6)
 
     ax.plot(Z, fluxSim*1e6,
-            color=fluxLoopColor,
+            color=color,
             linestyle='none',
             marker='s',
             ms=14,

@@ -14,7 +14,8 @@ import matplotlib.pyplot as plt
 
 from plotting import save_plot, plot_mirrored_profile, densityColor, temperatureColor
 from axuv import load_axuv_signal, pinholePositions
-from axuv_comparison import line_integrate_emissivity, add_halpha_signal_to_axis
+from axuv_comparison import (line_integrate_emissivity, add_halpha_signal_to_axis,
+                             plot_axuv_raw_signals)
 from atomic_data import load_pec_table, evaluate_pec
 from warpx_simulation import load_warpx_fields, midplane_profiles, thomsonDensityField, ionDensityField
 
@@ -151,7 +152,8 @@ def plasma_extent(profile, r, fraction=1e-2):
     return r[np.nonzero(profile > fraction * np.max(profile))[0][-1]]
 
 def plot_warpx_axuv_comparison(shotnum, expTime, runFile='fields_rtz.npz', signalDiodeArrayNum=2,
-                               rateKHz=10.0, showPlot=True, saveplot=False, axes=None):
+                               rateKHz=10.0, detectorsToDrop=None,
+                               showPlot=True, saveplot=False, axes=None):
     """
     Plot the WarpX midplane profiles against the measured AXUV signal.
 
@@ -180,6 +182,10 @@ def plot_warpx_axuv_comparison(shotnum, expTime, runFile='fields_rtz.npz', signa
     rateKHz : float
         Sets the width of the window the AXUV signal is averaged over, 1/rateKHz. [kHz]
         Default is 10.
+    detectorsToDrop : list of int
+        Indices of the AXUV chords with bad data, which are left out. These are in the order the
+        chords are stored in the AXUV file, the index on each panel of plot_axuv_raw_signals().
+        Default is None, which keeps every chord.
     showPlot : bool
         Show the figure before returning. Set to False to add to the figure afterwards.
         Default is True.
@@ -210,7 +216,8 @@ def plot_warpx_axuv_comparison(shotnum, expTime, runFile='fields_rtz.npz', signa
     #### Measured and synthetic AXUV signal
 
     impactParams, signal, signalSigma, description = load_axuv_signal(shotnum, signalDiodeArrayNum,
-                                                                      expTime, rateKHz=rateKHz)
+                                                                      expTime, rateKHz=rateKHz,
+                                                                      detectorsToDrop=detectorsToDrop)
 
     synthSignal = synthetic_warpx_halpha_signal(emissivity, impactParams,
                                                 pinholePositions[signalDiodeArrayNum])
@@ -318,4 +325,12 @@ if __name__ == "__main__":
     # Experimental time (in seconds). The WarpX fields are averaged over their dumps.
     expTime = 7.83e-3
 
-    plot_warpx_axuv_comparison(shotnum, expTime, runFile=runFile, saveplot=True)
+    # AXUV chords with bad data in this shot (chord indices, see plot_axuv_raw_signals())
+    axuvDetectorsToDrop = None
+
+    # Raw signal of every chord against time, to check for bad chords
+    plot_axuv_raw_signals(shotnum, expTime=expTime, detectorsToDrop=axuvDetectorsToDrop,
+                          saveplot=True, showPlot=False)
+
+    plot_warpx_axuv_comparison(shotnum, expTime, runFile=runFile,
+                               detectorsToDrop=axuvDetectorsToDrop, saveplot=True)
